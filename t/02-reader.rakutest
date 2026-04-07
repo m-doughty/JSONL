@@ -118,11 +118,12 @@ subtest 'grep filters by predicate' => {
 # --- sample ---
 
 subtest 'sample returns correct count' => {
-	plan 2;
+	plan 3;
 	my JSONL::Reader $r .= new(:path($fixtures.add('simple.jsonl')));
 	my @s = $r.sample(3);
 	is @s.elems, 3, '3 samples returned';
-	ok @s.all ~~ JSONL::Line, 'All results are JSONL::Line';
+	isa-ok @s[0], JSONL::Line, 'First sample is JSONL::Line';
+	ok @s[0].value<name>.defined, 'Sample has expected data';
 };
 
 subtest 'sample with n > count returns all' => {
