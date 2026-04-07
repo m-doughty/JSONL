@@ -1,0 +1,82 @@
+use Test;
+use lib 'lib';
+use JSONL;
+use JSONL::Line;
+use JSONL::Reader;
+use JSONL::Writer;
+use JSONL::Editor;
+use JSON::Fast;
+
+plan 8;
+
+my IO::Path $tmpdir = $*TMPDIR.add("jsonl-main-test-{$*PID}");
+$tmpdir.mkdir;
+
+END { $tmpdir.dir>>.unlink if $tmpdir.d; $tmpdir.rmdir if $tmpdir.d; }
+
+sub tmp-path(Str:D $name --> IO::Path:D) { $tmpdir.add($name) }
+
+# --- Convenience functions ---
+
+subtest 'read-jsonl reads file' => {
+	plan 2;
+	my @lines = read-jsonl('t/fixtures/simple.jsonl'.IO).list;
+	is @lines.elems, 10, '10 lines read';
+	is @lines[0].value<name>, 'Alice', 'First value correct';
+};
+
+subtest 'write-jsonl writes file' => {
+	plan 2;
+	my IO::Path $f = tmp-path('write-conv.jsonl');
+	write-jsonl($f, [%(:id(1)), %(:id(2))]);
+	my @lines = read-jsonl($f).list;
+	is @lines.elems, 2, '2 lines written';
+	is @lines[0].value<id>, 1, 'First value correct';
+};
+
+subtest 'append-jsonl appends to file' => {
+	plan 2;
+	my IO::Path $f = tmp-path('append-conv.jsonl');
+	write-jsonl($f, [%(:id(1))]);
+	append-jsonl($f, %(:id(2)));
+	my @lines = read-jsonl($f).list;
+	is @lines.elems, 2, '2 lines after append';
+	is @lines[1].value<id>, 2, 'Appended value correct';
+};
+
+subtest 'read-jsonl with lenient mode' => {
+	plan 1;
+	my @lines = read-jsonl('t/fixtures/blank-lines.jsonl'.IO, :lenient).list;
+	is @lines.elems, 3, 'Blank lines skipped in lenient mode';
+};
+
+# --- Round-trip ---
+
+subtest 'write then read round-trips correctly' => {
+	plan 1;
+	my IO::Path $f = tmp-path('roundtrip.jsonl');
+	my @original = %(:name("Alice"), :age(30)), %(:name("Bob"), :age(25));
+	write-jsonl($f, @original);
+	my @read = read-jsonl($f).map(*.value).list;
+	is-deeply @read, @original, 'Round-trip preserves data';
+};
+
+# --- Module re-exports ---
+
+subtest 'JSONL::Line accessible via use JSONL' => {
+	plan 1;
+	my JSONL::Line $line .= new(:value(%(:a(1))), :line-number(1));
+	isa-ok $line, JSONL::Line, 'JSONL::Line is available';
+};
+
+subtest 'JSONL::Reader accessible via use JSONL' => {
+	plan 1;
+	my JSONL::Reader $r .= new(:path('t/fixtures/simple.jsonl'.IO));
+	isa-ok $r, JSONL::Reader, 'JSONL::Reader is available';
+};
+
+subtest 'JSONL::Editor accessible via use JSONL' => {
+	plan 1;
+	my JSONL::Editor $e .= new;
+	isa-ok $e, JSONL::Editor, 'JSONL::Editor is available';
+};

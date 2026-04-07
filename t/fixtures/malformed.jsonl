@@ -1,0 +1,5 @@
+{"id":1,"valid":true}
+{bad json here
+{"id":2,"valid":true}
+not json at all
+{"id":3,"valid":true}

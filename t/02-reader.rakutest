@@ -1,0 +1,219 @@
+use Test;
+use lib 'lib';
+use JSONL::Reader;
+use JSONL::Line;
+
+plan 23;
+
+my IO::Path $fixtures = 't/fixtures'.IO;
+
+# --- Basic reading ---
+
+subtest 'Read simple.jsonl — correct count and values' => {
+	plan 4;
+	my JSONL::Reader $r .= new(:path($fixtures.add('simple.jsonl')));
+	my @lines = $r.list;
+	is @lines.elems, 10, '10 lines read';
+	is @lines[0].value<name>, 'Alice', 'First record name correct';
+	is @lines[9].value<name>, 'Jack', 'Last record name correct';
+	is @lines[0].line-number, 1, 'First line number is 1';
+};
+
+subtest 'Read mixed.jsonl — objects, arrays, scalars' => {
+	plan 6;
+	my JSONL::Reader $r .= new(:path($fixtures.add('mixed.jsonl')));
+	my @lines = $r.list;
+	is @lines.elems, 6, '6 lines read';
+	isa-ok @lines[0].value, Hash, 'First line is Hash';
+	isa-ok @lines[1].value, Array, 'Second line is Array';
+	is @lines[2].value, 'hello', 'Third line is string';
+	is @lines[3].value, 42, 'Fourth line is int';
+	is @lines[4].value, True, 'Fifth line is bool';
+};
+
+subtest 'Read empty.jsonl — zero lines' => {
+	plan 1;
+	my JSONL::Reader $r .= new(:path($fixtures.add('empty.jsonl')));
+	my @lines = $r.list;
+	is @lines.elems, 0, 'No lines from empty file';
+};
+
+subtest 'Read single.jsonl — exactly one line' => {
+	plan 2;
+	my JSONL::Reader $r .= new(:path($fixtures.add('single.jsonl')));
+	my @lines = $r.list;
+	is @lines.elems, 1, 'One line read';
+	is @lines[0].value<only>, 'line', 'Value correct';
+};
+
+# --- head / tail ---
+
+subtest 'head(3) returns first 3 lines' => {
+	plan 3;
+	my JSONL::Reader $r .= new(:path($fixtures.add('simple.jsonl')));
+	my @h = $r.head(3);
+	is @h.elems, 3, '3 lines returned';
+	is @h[0].value<name>, 'Alice', 'First is Alice';
+	is @h[2].value<name>, 'Charlie', 'Third is Charlie';
+};
+
+subtest 'tail(3) returns last 3 lines' => {
+	plan 3;
+	my JSONL::Reader $r .= new(:path($fixtures.add('simple.jsonl')));
+	my @t = $r.tail(3);
+	is @t.elems, 3, '3 lines returned';
+	is @t[0].value<name>, 'Hank', 'First of tail is Hank';
+	is @t[2].value<name>, 'Jack', 'Last is Jack';
+};
+
+# --- line-at ---
+
+subtest 'line-at(0) returns first line' => {
+	plan 2;
+	my JSONL::Reader $r .= new(:path($fixtures.add('simple.jsonl')));
+	my JSONL::Line $line = $r.line-at(0);
+	is $line.value<name>, 'Alice', 'First line value correct';
+	is $line.line-number, 1, 'Line number is 1';
+};
+
+subtest 'line-at(9) returns last line' => {
+	plan 1;
+	my JSONL::Reader $r .= new(:path($fixtures.add('simple.jsonl')));
+	my JSONL::Line $line = $r.line-at(9);
+	is $line.value<name>, 'Jack', 'Last line value correct';
+};
+
+subtest 'line-at out of bounds fails' => {
+	plan 1;
+	my JSONL::Reader $r .= new(:path($fixtures.add('simple.jsonl')));
+	my $result = $r.line-at(100);
+	nok $result.defined, 'Out of bounds returns Failure';
+};
+
+subtest 'line-at negative index fails' => {
+	plan 1;
+	my JSONL::Reader $r .= new(:path($fixtures.add('simple.jsonl')));
+	my $result = $r.line-at(-1);
+	nok $result.defined, 'Negative index returns Failure';
+};
+
+# --- count ---
+
+subtest 'count returns correct number' => {
+	plan 2;
+	is JSONL::Reader.new(:path($fixtures.add('simple.jsonl'))).count, 10, 'simple.jsonl has 10 lines';
+	is JSONL::Reader.new(:path($fixtures.add('empty.jsonl'))).count, 0, 'empty.jsonl has 0 lines';
+};
+
+# --- grep ---
+
+subtest 'grep filters by predicate' => {
+	plan 2;
+	my JSONL::Reader $r .= new(:path($fixtures.add('simple.jsonl')));
+	my @filtered = $r.grep(-> JSONL::Line $l { $l<age> > 30 }).list;
+	ok @filtered.elems > 0, 'Some results returned';
+	ok @filtered.all.<age> > 30, 'All filtered results have age > 30';
+};
+
+# --- sample ---
+
+subtest 'sample returns correct count' => {
+	plan 2;
+	my JSONL::Reader $r .= new(:path($fixtures.add('simple.jsonl')));
+	my @s = $r.sample(3);
+	is @s.elems, 3, '3 samples returned';
+	ok @s.all ~~ JSONL::Line, 'All results are JSONL::Line';
+};
+
+subtest 'sample with n > count returns all' => {
+	plan 1;
+	my JSONL::Reader $r .= new(:path($fixtures.add('simple.jsonl')));
+	my @s = $r.sample(100);
+	is @s.elems, 10, 'Returns all 10 lines when sample > count';
+};
+
+# --- summary ---
+
+subtest 'summary returns expected structure' => {
+	plan 4;
+	my JSONL::Reader $r .= new(:path($fixtures.add('simple.jsonl')));
+	my %s = $r.summary;
+	is %s<count>, 10, 'Count correct';
+	ok %s<types><Hash>:exists, 'Hash type found';
+	ok %s<keys><name>:exists, 'name key found';
+	is %s<keys><name>, 10, 'name appears in all 10 records';
+};
+
+# --- schema ---
+
+subtest 'schema infers field types' => {
+	plan 3;
+	my JSONL::Reader $r .= new(:path($fixtures.add('simple.jsonl')));
+	my %s = $r.schema;
+	ok %s<name>:exists, 'name field found';
+	ok 'Str' (elem) %s<name>, 'name is Str';
+	ok 'Int' (elem) %s<age>, 'age is Int';
+};
+
+# --- Strict mode: blank lines ---
+
+subtest 'Strict mode dies on blank lines' => {
+	plan 1;
+	my JSONL::Reader $r .= new(:path($fixtures.add('blank-lines.jsonl')));
+	dies-ok { $r.list }, 'Dies on blank line in strict mode';
+};
+
+# --- Strict mode: malformed JSON ---
+
+subtest 'Strict mode dies on malformed JSON' => {
+	plan 1;
+	my JSONL::Reader $r .= new(:path($fixtures.add('malformed.jsonl')));
+	dies-ok { $r.list }, 'Dies on malformed JSON in strict mode';
+};
+
+# --- Lenient mode: blank lines ---
+
+subtest 'Lenient mode skips blank lines' => {
+	plan 1;
+	my JSONL::Reader $r .= new(:path($fixtures.add('blank-lines.jsonl')), :lenient);
+	my @lines = $r.list;
+	is @lines.elems, 3, 'Blank lines skipped, 3 valid lines returned';
+};
+
+# --- Lenient mode: malformed JSON ---
+
+subtest 'Lenient mode skips malformed and collects warnings' => {
+	plan 3;
+	my JSONL::Reader $r .= new(:path($fixtures.add('malformed.jsonl')), :lenient);
+	my @lines = $r.list;
+	is @lines.elems, 3, '3 valid lines returned';
+	is $r.warnings.elems, 2, '2 warnings collected';
+	is $r.warnings[0].line-number, 2, 'First warning at line 2';
+};
+
+# --- IO::Handle input ---
+
+subtest 'Read from IO::Handle' => {
+	plan 2;
+	my IO::Handle $fh = $fixtures.add('simple.jsonl').open(:r);
+	my JSONL::Reader $r .= new(:handle($fh));
+	my @lines = $r.list;
+	is @lines.elems, 10, '10 lines from handle';
+	is @lines[0].value<name>, 'Alice', 'First value correct';
+	$fh.close;
+};
+
+# --- Construction validation ---
+
+subtest 'Both path and handle dies' => {
+	plan 1;
+	my IO::Handle $fh = $fixtures.add('simple.jsonl').open(:r);
+	dies-ok { JSONL::Reader.new(:path($fixtures.add('simple.jsonl')), :handle($fh)) },
+		'Dies with both path and handle';
+	$fh.close;
+};
+
+subtest 'Neither path nor handle dies' => {
+	plan 1;
+	dies-ok { JSONL::Reader.new() }, 'Dies with no path or handle';
+};

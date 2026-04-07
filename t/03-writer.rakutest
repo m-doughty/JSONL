@@ -1,0 +1,193 @@
+use Test;
+use lib 'lib';
+use JSONL::Writer;
+use JSON::Fast;
+
+plan 16;
+
+my IO::Path $tmpdir = $*TMPDIR.add("jsonl-writer-test-{$*PID}");
+$tmpdir.mkdir;
+
+END { $tmpdir.dir>>.unlink if $tmpdir.d; $tmpdir.rmdir if $tmpdir.d; }
+
+sub tmp-path(Str:D $name --> IO::Path:D) { $tmpdir.add($name) }
+
+# --- write-all ---
+
+subtest 'write-all writes array of Hashes' => {
+	plan 3;
+	my IO::Path $f = tmp-path('write-all-hashes.jsonl');
+	my @data = {:name("Alice"), :age(30)}, {:name("Bob"), :age(25)};
+	JSONL::Writer.new(:path($f)).write-all(@data);
+
+	my @lines = $f.lines;
+	is @lines.elems, 2, 'Two lines written';
+	is-deeply from-json(@lines[0]), {:name("Alice"), :age(30)}, 'First line correct';
+	is-deeply from-json(@lines[1]), {:name("Bob"), :age(25)}, 'Second line correct';
+};
+
+subtest 'write-all with mixed types' => {
+	plan 4;
+	my IO::Path $f = tmp-path('write-all-mixed.jsonl');
+	my @data = {:key("val")}, [1, 2], "hello", 42;
+	JSONL::Writer.new(:path($f)).write-all(@data);
+
+	my @lines = $f.lines;
+	is @lines.elems, 4, 'Four lines written';
+	is-deeply from-json(@lines[0]), {:key("val")}, 'Hash line correct';
+	is-deeply from-json(@lines[1]), [1, 2], 'Array line correct';
+	is from-json(@lines[3]), 42, 'Int line correct';
+};
+
+subtest 'write-all empty array creates empty file' => {
+	plan 1;
+	my IO::Path $f = tmp-path('write-all-empty.jsonl');
+	JSONL::Writer.new(:path($f)).write-all([]);
+	is $f.slurp, '', 'File is empty';
+};
+
+# --- sorted-keys ---
+
+subtest 'sorted-keys produces deterministic output' => {
+	plan 1;
+	my IO::Path $f = tmp-path('sorted-keys.jsonl');
+	my %data = z => 1, a => 2, m => 3;
+	JSONL::Writer.new(:path($f), :sorted-keys).write-all([%data,]);
+	is $f.lines[0], '{"a":2,"m":3,"z":1}', 'Keys sorted alphabetically';
+};
+
+subtest 'sorted-keys disabled' => {
+	plan 1;
+	my IO::Path $f = tmp-path('unsorted-keys.jsonl');
+	my %h = b => 2, a => 1;
+	JSONL::Writer.new(:path($f), :!sorted-keys).write-all([%h,]);
+	my %parsed = from-json($f.lines[0]);
+	is-deeply %parsed, %(:a(1), :b(2)), 'Values preserved (key order may vary)';
+};
+
+# --- compact output ---
+
+subtest 'output is compact with no extra whitespace' => {
+	plan 2;
+	my IO::Path $f = tmp-path('compact.jsonl');
+	my %h = a => 1, b => [2, 3];
+	JSONL::Writer.new(:path($f)).write-all([%h,]);
+	my Str:D $line = $f.lines[0];
+	nok $line.contains("  "), 'No double spaces';
+	is $line, '{"a":1,"b":[2,3]}', 'Fully compact';
+};
+
+# --- append ---
+
+subtest 'append adds to existing file' => {
+	plan 3;
+	my IO::Path $f = tmp-path('append.jsonl');
+	JSONL::Writer.new(:path($f)).write-all([{:id(1)}]);
+	is $f.lines.elems, 1, 'One line after write-all';
+
+	JSONL::Writer.new(:path($f)).append({:id(2)});
+	my @lines = $f.lines;
+	is @lines.elems, 2, 'Two lines after append';
+	is-deeply from-json(@lines[1]), {:id(2)}, 'Appended line correct';
+};
+
+subtest 'append to nonexistent file creates it' => {
+	plan 2;
+	my IO::Path $f = tmp-path('append-new.jsonl');
+	nok $f.e, 'File does not exist yet';
+	JSONL::Writer.new(:path($f)).append({:id(1)});
+	is-deeply from-json($f.lines[0]), {:id(1)}, 'Line written to new file';
+};
+
+# --- append-many ---
+
+subtest 'append-many adds multiple lines' => {
+	plan 2;
+	my IO::Path $f = tmp-path('append-many.jsonl');
+	JSONL::Writer.new(:path($f)).write-all([{:id(1)}]);
+	JSONL::Writer.new(:path($f)).append-many([{:id(2)}, {:id(3)}]);
+
+	my @lines = $f.lines;
+	is @lines.elems, 3, 'Three lines total';
+	is-deeply from-json(@lines[2]), {:id(3)}, 'Last appended line correct';
+};
+
+# --- write to IO::Handle ---
+
+subtest 'write to IO::Handle' => {
+	plan 2;
+	my IO::Path $f = tmp-path('handle-write.jsonl');
+	my IO::Handle $fh = $f.open(:w);
+	my JSONL::Writer $writer .= new(:handle($fh));
+	$writer.write-line({:a(1)});
+	$writer.write-line({:b(2)});
+	$fh.close;
+
+	my @lines = $f.lines;
+	is @lines.elems, 2, 'Two lines written via handle';
+	is-deeply from-json(@lines[0]), {:a(1)}, 'First line correct';
+};
+
+# --- each line ends with newline ---
+
+subtest 'each line ends with exactly one newline' => {
+	plan 1;
+	my IO::Path $f = tmp-path('newlines.jsonl');
+	JSONL::Writer.new(:path($f)).write-all([{:a(1)}, {:b(2)}]);
+	my Str:D $content = $f.slurp;
+	my @parts = $content.split("\n");
+	# Two lines + trailing newline = 3 parts (last is empty)
+	is @parts.elems, 3, 'Two lines plus trailing newline';
+};
+
+subtest 'file ends with newline after last line' => {
+	plan 1;
+	my IO::Path $f = tmp-path('trailing-nl.jsonl');
+	JSONL::Writer.new(:path($f)).write-all([{:x(1)}]);
+	ok $f.slurp.ends-with("\n"), 'File ends with newline';
+};
+
+# --- write-line sequential ---
+
+subtest 'write-line writes sequentially' => {
+	plan 3;
+	my IO::Path $f = tmp-path('write-line-seq.jsonl');
+	my JSONL::Writer $writer .= new(:path($f));
+	$writer.write-line({:id(1)});
+	$writer.write-line({:id(2)});
+	$writer.write-line({:id(3)});
+	$writer.close;
+
+	my @lines = $f.lines;
+	is @lines.elems, 3, 'Three lines written';
+	is-deeply from-json(@lines[0]), {:id(1)}, 'First line correct';
+	is-deeply from-json(@lines[2]), {:id(3)}, 'Third line correct';
+};
+
+# --- write-all overwrites ---
+
+subtest 'write-all overwrites existing content' => {
+	plan 2;
+	my IO::Path $f = tmp-path('overwrite.jsonl');
+	JSONL::Writer.new(:path($f)).write-all([{:id(1)}, {:id(2)}, {:id(3)}]);
+	is $f.lines.elems, 3, 'Three lines initially';
+
+	JSONL::Writer.new(:path($f)).write-all([{:id(99)}]);
+	is $f.lines.elems, 1, 'Overwritten to one line';
+};
+
+# --- construction validation ---
+
+subtest 'providing both path and handle dies' => {
+	plan 1;
+	my IO::Path $f = tmp-path('both.jsonl');
+	my IO::Handle $fh = $f.open(:w);
+	dies-ok { JSONL::Writer.new(:path($f), :handle($fh)) },
+		'Dies with both path and handle';
+	$fh.close;
+};
+
+subtest 'providing neither path nor handle dies' => {
+	plan 1;
+	dies-ok { JSONL::Writer.new() }, 'Dies with no path or handle';
+};

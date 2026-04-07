@@ -1,0 +1,34 @@
+{
+  "auth": "zef:apogee",
+  "authors": [
+    "Matt Doughty"
+  ],
+  "build-depends": [
+  ],
+  "depends": [
+    "JSON::Fast"
+  ],
+  "description": "Read, write, edit, and filter JSONL (JSON Lines) files",
+  "license": "Artistic-2.0",
+  "name": "JSONL",
+  "perl": "6.d",
+  "provides": {
+    "JSONL": "lib/JSONL.rakumod",
+    "JSONL::Editor": "lib/JSONL/Editor.rakumod",
+    "JSONL::Line": "lib/JSONL/Line.rakumod",
+    "JSONL::Reader": "lib/JSONL/Reader.rakumod",
+    "JSONL::Writer": "lib/JSONL/Writer.rakumod"
+  },
+  "resources": [
+  ],
+  "source-url": "https://github.com/m-doughty/JSONL.git",
+  "tags": [
+    "jsonl",
+    "json",
+    "ndjson",
+    "data"
+  ],
+  "test-depends": [
+  ],
+  "version": "0.1.0"
+}

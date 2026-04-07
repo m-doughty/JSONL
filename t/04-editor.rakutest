@@ -1,0 +1,187 @@
+use Test;
+use lib 'lib';
+use JSONL::Editor;
+use JSONL::Reader;
+use JSONL::Writer;
+use JSONL::Line;
+use JSON::Fast;
+
+plan 16;
+
+my IO::Path $tmpdir = $*TMPDIR.add("jsonl-editor-test-{$*PID}");
+$tmpdir.mkdir;
+
+END { $tmpdir.dir>>.unlink if $tmpdir.d; $tmpdir.rmdir if $tmpdir.d; }
+
+sub make-test-file(Str:D $name, @values --> IO::Path:D) {
+	my IO::Path $f = $tmpdir.add($name);
+	JSONL::Writer.new(:path($f)).write-all(@values);
+	$f;
+}
+
+sub read-values(IO::Path:D $f --> List) {
+	JSONL::Reader.new(:path($f)).list.map(*.value).list;
+}
+
+my JSONL::Editor $editor .= new;
+
+# --- update-at ---
+
+subtest 'update-at replaces middle line' => {
+	plan 3;
+	my IO::Path $f = make-test-file('update-mid.jsonl',
+		[%(:id(1)), %(:id(2)), %(:id(3))]);
+	$editor.update-at($f, 1, %(:id(99)));
+	my @vals = read-values($f);
+	is @vals.elems, 3, 'Still 3 lines';
+	is @vals[0]<id>, 1, 'First line unchanged';
+	is @vals[1]<id>, 99, 'Middle line updated';
+};
+
+subtest 'update-at index 0 (first line)' => {
+	plan 2;
+	my IO::Path $f = make-test-file('update-first.jsonl',
+		[%(:id(1)), %(:id(2))]);
+	$editor.update-at($f, 0, %(:id(99)));
+	my @vals = read-values($f);
+	is @vals[0]<id>, 99, 'First line updated';
+	is @vals[1]<id>, 2, 'Second line unchanged';
+};
+
+subtest 'update-at last index' => {
+	plan 2;
+	my IO::Path $f = make-test-file('update-last.jsonl',
+		[%(:id(1)), %(:id(2)), %(:id(3))]);
+	$editor.update-at($f, 2, %(:id(99)));
+	my @vals = read-values($f);
+	is @vals[2]<id>, 99, 'Last line updated';
+	is @vals[0]<id>, 1, 'First line unchanged';
+};
+
+subtest 'update-at out of bounds dies' => {
+	plan 1;
+	my IO::Path $f = make-test-file('update-oob.jsonl', [%(:id(1))]);
+	dies-ok { $editor.update-at($f, 5, %(:id(99))) }, 'Dies on out of bounds';
+};
+
+# --- delete-at ---
+
+subtest 'delete-at removes middle line' => {
+	plan 3;
+	my IO::Path $f = make-test-file('delete-mid.jsonl',
+		[%(:id(1)), %(:id(2)), %(:id(3))]);
+	$editor.delete-at($f, 1);
+	my @vals = read-values($f);
+	is @vals.elems, 2, 'Now 2 lines';
+	is @vals[0]<id>, 1, 'First line intact';
+	is @vals[1]<id>, 3, 'Third line moved up';
+};
+
+subtest 'delete-at first line' => {
+	plan 2;
+	my IO::Path $f = make-test-file('delete-first.jsonl',
+		[%(:id(1)), %(:id(2)), %(:id(3))]);
+	$editor.delete-at($f, 0);
+	my @vals = read-values($f);
+	is @vals.elems, 2, 'Now 2 lines';
+	is @vals[0]<id>, 2, 'Second line is now first';
+};
+
+subtest 'delete-at last line' => {
+	plan 2;
+	my IO::Path $f = make-test-file('delete-last.jsonl',
+		[%(:id(1)), %(:id(2)), %(:id(3))]);
+	$editor.delete-at($f, 2);
+	my @vals = read-values($f);
+	is @vals.elems, 2, 'Now 2 lines';
+	is @vals[1]<id>, 2, 'Last remaining is id 2';
+};
+
+subtest 'delete-at out of bounds dies' => {
+	plan 1;
+	my IO::Path $f = make-test-file('delete-oob.jsonl', [%(:id(1))]);
+	dies-ok { $editor.delete-at($f, 5) }, 'Dies on out of bounds';
+};
+
+# --- insert-at ---
+
+subtest 'insert-at beginning' => {
+	plan 3;
+	my IO::Path $f = make-test-file('insert-begin.jsonl',
+		[%(:id(2)), %(:id(3))]);
+	$editor.insert-at($f, 0, %(:id(1)));
+	my @vals = read-values($f);
+	is @vals.elems, 3, 'Now 3 lines';
+	is @vals[0]<id>, 1, 'Inserted at beginning';
+	is @vals[1]<id>, 2, 'Original first shifted down';
+};
+
+subtest 'insert-at middle' => {
+	plan 3;
+	my IO::Path $f = make-test-file('insert-mid.jsonl',
+		[%(:id(1)), %(:id(3))]);
+	$editor.insert-at($f, 1, %(:id(2)));
+	my @vals = read-values($f);
+	is @vals.elems, 3, 'Now 3 lines';
+	is @vals[1]<id>, 2, 'Inserted in middle';
+	is @vals[2]<id>, 3, 'Original second shifted down';
+};
+
+subtest 'insert-at end (append)' => {
+	plan 2;
+	my IO::Path $f = make-test-file('insert-end.jsonl',
+		[%(:id(1)), %(:id(2))]);
+	$editor.insert-at($f, 2, %(:id(3)));
+	my @vals = read-values($f);
+	is @vals.elems, 3, 'Now 3 lines';
+	is @vals[2]<id>, 3, 'Appended at end';
+};
+
+subtest 'insert-at beyond count dies' => {
+	plan 1;
+	my IO::Path $f = make-test-file('insert-oob.jsonl', [%(:id(1))]);
+	dies-ok { $editor.insert-at($f, 5, %(:id(99))) }, 'Dies beyond count';
+};
+
+# --- transform ---
+
+subtest 'transform identity preserves file' => {
+	plan 1;
+	my IO::Path $f = make-test-file('transform-id.jsonl',
+		[%(:id(1)), %(:id(2)), %(:id(3))]);
+	$editor.transform($f, -> JSONL::Line $l { $l.value });
+	my @vals = read-values($f);
+	is-deeply @vals, [%(:id(1)), %(:id(2)), %(:id(3))], 'File unchanged';
+};
+
+subtest 'transform modifies values' => {
+	plan 1;
+	my IO::Path $f = make-test-file('transform-mod.jsonl',
+		[%(:id(1)), %(:id(2)), %(:id(3))]);
+	$editor.transform($f, -> JSONL::Line $l {
+		my %v = $l.value.Hash;
+		%v<id> *= 10;
+		%v;
+	});
+	my @vals = read-values($f);
+	is-deeply @vals, [%(:id(10)), %(:id(20)), %(:id(30))], 'Values multiplied';
+};
+
+subtest 'transform returning Nil deletes lines' => {
+	plan 1;
+	my IO::Path $f = make-test-file('transform-filter.jsonl',
+		[%(:id(1)), %(:id(2)), %(:id(3))]);
+	$editor.transform($f, -> JSONL::Line $l {
+		$l.value<id> == 2 ?? Nil !! $l.value;
+	});
+	my @vals = read-values($f);
+	is-deeply @vals, [%(:id(1)), %(:id(3))], 'Line with id=2 removed';
+};
+
+subtest 'transform on empty file is no-op' => {
+	plan 1;
+	my IO::Path $f = make-test-file('transform-empty.jsonl', []);
+	$editor.transform($f, -> JSONL::Line $l { $l.value });
+	my @vals = read-values($f);
+	is @vals.elems, 0, 'Still empty';
+};

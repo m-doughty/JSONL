@@ -1,0 +1,12 @@
+Revision history for JSONL
+
+{{$NEXT}}
+
+0.1.0  2026-04-07T18:33:26+01:00
+    - Initial release
+    - Reader with lazy streaming, head/tail/grep/sample/summary/schema
+    - Writer with sorted keys, append mode
+    - Editor with update-at/delete-at/insert-at/transform
+    - Line class with hash-like and array-like access
+    - Strict and lenient modes for blank lines and malformed JSON
+    - File and IO::Handle input/output support

@@ -1,0 +1,203 @@
+use Test;
+use lib 'lib';
+use JSONL::Line;
+use JSON::Fast;
+
+plan 26;
+
+# --- Construction with various JSON types ---
+
+subtest 'Hash value' => {
+	plan 3;
+	my JSONL::Line $line .= new(value => {:name("Alice"), :age(30)}, line-number => 1);
+	isa-ok $line, JSONL::Line, 'Created Line with Hash value';
+	is $line.value<name>, 'Alice', 'Hash value accessible';
+	is $line.line-number, 1, 'Line number correct';
+};
+
+subtest 'Array value' => {
+	plan 2;
+	my JSONL::Line $line .= new(value => [1, 2, 3], line-number => 5);
+	is-deeply $line.value, [1, 2, 3], 'Array value preserved';
+	is $line.line-number, 5, 'Line number correct';
+};
+
+subtest 'String value' => {
+	plan 2;
+	my JSONL::Line $line .= new(value => "hello", line-number => 3);
+	is $line.value, 'hello', 'String value preserved';
+	is $line.line-number, 3, 'Line number correct';
+};
+
+subtest 'Int value' => {
+	plan 2;
+	my JSONL::Line $line .= new(value => 42, line-number => 7);
+	is $line.value, 42, 'Int value preserved';
+	is $line.line-number, 7, 'Line number correct';
+};
+
+subtest 'Bool value (True)' => {
+	plan 2;
+	my JSONL::Line $line .= new(value => True, line-number => 2);
+	is $line.value, True, 'True value preserved';
+	is $line.line-number, 2, 'Line number correct';
+};
+
+subtest 'Bool value (False)' => {
+	plan 2;
+	my JSONL::Line $line .= new(value => False, line-number => 4);
+	is $line.value, False, 'False value preserved';
+	is $line.line-number, 4, 'Line number correct';
+};
+
+subtest 'Nil value' => {
+	plan 2;
+	my JSONL::Line $line .= new(value => Any, line-number => 6);
+	ok !$line.value.defined, 'Nil/Any value preserved as undefined';
+	is $line.line-number, 6, 'Line number correct';
+};
+
+# --- to-json serialization ---
+
+subtest 'to-json Hash produces compact output' => {
+	plan 2;
+	my JSONL::Line $line .= new(value => {:b(2), :a(1)}, line-number => 1);
+	my Str:D $json = $line.to-json;
+	nok $json.contains("\n"), 'No newlines in output';
+	is $json, '{"a":1,"b":2}', 'Keys sorted, compact format';
+};
+
+subtest 'to-json Array produces compact output' => {
+	plan 2;
+	my JSONL::Line $line .= new(value => [1, 2, 3], line-number => 1);
+	my Str:D $json = $line.to-json;
+	nok $json.contains("\n"), 'No newlines in output';
+	is $json, '[1,2,3]', 'Compact array format';
+};
+
+subtest 'to-json String' => {
+	plan 1;
+	my JSONL::Line $line .= new(value => "hello world", line-number => 1);
+	is $line.to-json, '"hello world"', 'String serialized with quotes';
+};
+
+subtest 'to-json Int' => {
+	plan 1;
+	my JSONL::Line $line .= new(value => 42, line-number => 1);
+	is $line.to-json, '42', 'Int serialized as number';
+};
+
+subtest 'to-json Bool True' => {
+	plan 1;
+	my JSONL::Line $line .= new(value => True, line-number => 1);
+	is $line.to-json, 'true', 'True serialized as true';
+};
+
+subtest 'to-json Bool False' => {
+	plan 1;
+	my JSONL::Line $line .= new(value => False, line-number => 1);
+	is $line.to-json, 'false', 'False serialized as false';
+};
+
+subtest 'to-json Nil' => {
+	plan 1;
+	my JSONL::Line $line .= new(value => Any, line-number => 1);
+	is $line.to-json, 'null', 'Nil serialized as null';
+};
+
+# --- Round-trip ---
+
+subtest 'Round-trip Hash' => {
+	plan 1;
+	my %original = :name("Alice"), :age(30);
+	my JSONL::Line $line .= new(value => %original, line-number => 1);
+	my %parsed = from-json($line.to-json);
+	is-deeply %parsed, %original, 'Hash round-trips correctly';
+};
+
+subtest 'Round-trip Array' => {
+	plan 1;
+	my @original = 1, 2, 3;
+	my JSONL::Line $line .= new(value => @original, line-number => 1);
+	my @parsed = from-json($line.to-json);
+	is-deeply @parsed, @original, 'Array round-trips correctly';
+};
+
+subtest 'Round-trip nested structure' => {
+	plan 1;
+	my %original = :name("Bob"), :tags(["a", "b"]), :meta({:x(1)});
+	my JSONL::Line $line .= new(value => %original, line-number => 1);
+	my %parsed = from-json($line.to-json);
+	is-deeply %parsed, %original, 'Nested structure round-trips correctly';
+};
+
+# --- Str coercion ---
+
+subtest 'Str method matches to-json' => {
+	plan 1;
+	my JSONL::Line $line .= new(value => {:a(1)}, line-number => 1);
+	is $line.Str, $line.to-json, '.Str returns same as .to-json';
+};
+
+# --- line-number is required ---
+
+subtest 'line-number is required' => {
+	plan 1;
+	dies-ok { JSONL::Line.new(value => "test") }, 'Dies without line-number';
+};
+
+# --- value is required ---
+
+subtest 'value is required' => {
+	plan 1;
+	dies-ok { JSONL::Line.new(line-number => 1) }, 'Dies without value';
+};
+
+# --- Hash-like access (AT-KEY, EXISTS-KEY) ---
+
+subtest 'Hash-like access with <>' => {
+	plan 3;
+	my JSONL::Line $line .= new(value => {:name("Alice"), :age(30)}, line-number => 1);
+	is $line<name>, 'Alice', '$line<name> works';
+	is $line<age>, 30, '$line<age> works';
+	ok !$line<missing>.defined, '$line<missing> returns undefined';
+};
+
+subtest 'EXISTS-KEY via :exists' => {
+	plan 2;
+	my JSONL::Line $line .= new(value => {:name("Alice")}, line-number => 1);
+	ok $line<name>:exists, 'Existing key returns True';
+	nok $line<missing>:exists, 'Missing key returns False';
+};
+
+subtest 'Nested hash access' => {
+	plan 1;
+	my JSONL::Line $line .= new(value => {:meta({:x(42)})}, line-number => 1);
+	is $line<meta><x>, 42, '$line<meta><x> works for nested access';
+};
+
+# --- Array-like access (AT-POS, EXISTS-POS) ---
+
+subtest 'Array-like access with []' => {
+	plan 2;
+	my JSONL::Line $line .= new(value => [10, 20, 30], line-number => 1);
+	is $line[0], 10, '$line[0] works';
+	is $line[2], 30, '$line[2] works';
+};
+
+subtest 'EXISTS-POS via :exists' => {
+	plan 2;
+	my JSONL::Line $line .= new(value => [10, 20], line-number => 1);
+	ok $line[0]:exists, 'Index 0 exists';
+	nok $line[5]:exists, 'Index 5 does not exist';
+};
+
+# --- Delegation methods ---
+
+subtest 'keys, values, kv, elems on Hash value' => {
+	plan 3;
+	my JSONL::Line $line .= new(value => {:a(1), :b(2)}, line-number => 1);
+	is $line.elems, 2, '.elems returns 2';
+	is $line.keys.sort.list, <a b>, '.keys returns field names';
+	is $line.values.sort.list, (1, 2), '.values returns field values';
+};
