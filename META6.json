@@ -6,7 +6,7 @@
   "build-depends": [
   ],
   "depends": [
-    "JSON::Fast"
+    "JSON::Fast:auth<cpan:TIMOTIMO>"
   ],
   "description": "Read, write, edit, and filter JSONL (JSON Lines) files",
   "license": "Artistic-2.0",
@@ -30,5 +30,5 @@
   ],
   "test-depends": [
   ],
-  "version": "0.1.0"
+  "version": "0.1.1"
 }
