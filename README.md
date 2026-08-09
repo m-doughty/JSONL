@@ -107,6 +107,18 @@ $w.append-many(@values);      # Append multiple values
 $w.close;                     # Close handle if we opened it
 ```
 
+### Durability with `:flush`
+
+By default, writes are buffered by the underlying handle and may not reach disk immediately. For long-lived handle-mode writers (e.g. an append-only transcript kept open across many small writes), a crash between writes can lose more than the in-flight line if the OS/runtime buffer is holding unflushed data. Passing `:flush` makes the writer call `.flush` on the handle after every line, so a crash can lose at most the line currently being written.
+
+```raku
+my IO::Handle $fh = 'transcript.jsonl'.IO.open(:a);
+my JSONL::Writer $w .= new(:handle($fh), :flush);
+$w.write-line(%(:role("user"), :text("hello")));   # durable as soon as this returns
+```
+
+`:flush` defaults to `False` to avoid the extra syscall overhead when durability isn't required. Path-mode `append`/`append-many` already close the handle after every call (which flushes implicitly), so `:flush` mainly matters for handle-mode writers and `write-all`.
+
 JSONL::Editor
 -------------
 

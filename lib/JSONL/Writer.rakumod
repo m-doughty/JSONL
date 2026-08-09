@@ -5,6 +5,7 @@ unit class JSONL::Writer;
 has IO::Path $.path;
 has IO::Handle $.handle;
 has Bool:D $.sorted-keys = True;
+has Bool:D $.flush = False;
 has IO::Handle $!fh;
 has Bool:D $!owns-handle = False;
 
@@ -40,6 +41,7 @@ method write-line(Any:D $value) {
 		self!open-for-write;
 	}
 	$!fh.say(self!serialize($value));
+	$!fh.flush if $!flush;
 }
 
 method write-all(@values) {
@@ -48,6 +50,7 @@ method write-all(@values) {
 	}
 	for @values -> Any:D $value {
 		$!fh.say(self!serialize($value));
+		$!fh.flush if $!flush;
 	}
 	self.close if $!owns-handle;
 }
@@ -56,9 +59,11 @@ method append(Any:D $value) {
 	if $!path.defined {
 		self!open-for-append;
 		$!fh.say(self!serialize($value));
+		$!fh.flush if $!flush;
 		self.close;
 	} else {
 		$!fh.say(self!serialize($value));
+		$!fh.flush if $!flush;
 	}
 }
 
@@ -67,11 +72,13 @@ method append-many(@values) {
 		self!open-for-append;
 		for @values -> Any:D $value {
 			$!fh.say(self!serialize($value));
+			$!fh.flush if $!flush;
 		}
 		self.close;
 	} else {
 		for @values -> Any:D $value {
 			$!fh.say(self!serialize($value));
+			$!fh.flush if $!flush;
 		}
 	}
 }

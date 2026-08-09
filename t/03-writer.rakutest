@@ -3,7 +3,7 @@ use lib 'lib';
 use JSONL::Writer;
 use JSON::Fast;
 
-plan 16;
+plan 18;
 
 my IO::Path $tmpdir = $*TMPDIR.add("jsonl-writer-test-{$*PID}");
 $tmpdir.mkdir;
@@ -174,6 +174,38 @@ subtest 'write-all overwrites existing content' => {
 
 	JSONL::Writer.new(:path($f)).write-all([{:id(99)}]);
 	is $f.lines.elems, 1, 'Overwritten to one line';
+};
+
+# --- flush ---
+
+subtest 'flush writes line to disk before close' => {
+	plan 2;
+	my IO::Path $f = tmp-path('flush-handle.jsonl');
+	my IO::Handle $fh = $f.open(:w);
+	my JSONL::Writer $writer .= new(:handle($fh), :flush);
+	$writer.write-line({:id(1)});
+
+	my IO::Handle $reader = $f.open(:r);
+	my @lines = $reader.lines;
+	is @lines.elems, 1, 'Line visible to a second reader before close';
+	is-deeply from-json(@lines[0]), {:id(1)}, 'Line content correct';
+	$reader.close;
+	$fh.close;
+};
+
+subtest 'default handle-mode writer (no flush) still works and matches content after close' => {
+	plan 3;
+	my IO::Path $f = tmp-path('no-flush-handle.jsonl');
+	my IO::Handle $fh = $f.open(:w);
+	my JSONL::Writer $writer .= new(:handle($fh));
+	nok $writer.flush, 'flush defaults to False';
+	$writer.write-line({:id(1)});
+	$writer.write-line({:id(2)});
+	$fh.close;
+
+	my @lines = $f.lines;
+	is @lines.elems, 2, 'Two lines written via handle';
+	is-deeply from-json(@lines[1]), {:id(2)}, 'Second line correct';
 };
 
 # --- construction validation ---
