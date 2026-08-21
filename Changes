@@ -2,6 +2,24 @@ Revision history for JSONL
 
 {{$NEXT}}
 
+0.1.6  2026-08-21T23:47:32+01:00
+    - Records are now written as BYTES — UTF-8 JSON plus one 0x0A — through
+      IO::Handle.write, bypassing the handle's encoder entirely. This is
+      the third and final round with Windows CRLF: 0.1.4 passed
+      :!translate-nl to open (not an open argument; silently swallowed by
+      %_), 0.1.5 re-set it through .encoding (which short-circuits before
+      reading :translate-nl when the encoding name is unchanged) — both
+      no-ops, both caught by the byte test on Windows CI. Bytes have no
+      trapdoors. Works on any handle, text or binary; .write is ordered
+      with a caller's own .say on a shared handle. Output is UTF-8
+      regardless of the handle's encoding, which is what JSONL is. The
+      closed-handle check .say performed and .write does not is supplied
+      by the writer, so a write through a closed handle still throws the
+      typed X::IO::Closed rather than a raw VM error.
+    - The byte test now also drives a handle opened :nl-out("\r\n") — the
+      shape of the Windows failure, reproduced on every platform — so the
+      immunity is proven without a Windows box.
+
 0.1.5  2026-08-21T23:27:29+01:00
     - Writer output really is byte-identical on every platform now. The
       0.1.4 fix passed :!translate-nl to open, which is not an open
