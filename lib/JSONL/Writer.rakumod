@@ -17,20 +17,28 @@ submethod TWEAK() {
 		die "JSONL::Writer: must provide :path or :handle";
 	}
 	if $!handle.defined {
-		$!fh = self!disable-nl-translation($!handle);
+		$!fh = $!handle;
 		$!owns-handle = False;
 	}
 }
 
-# JSONL is a byte format whose record separator is one 0x0A byte, on
-# every platform. Rakudo builds a handle's encoder with newline
-# translation ON (it is not an `open` argument — `open(:!translate-nl)`
-# is silently swallowed by %_), which on Windows rewrites every "\n" to
-# CRLF on the way out. Rebuilding the encoder through .encoding is the
-# one supported way to turn that off; a no-op everywhere else.
-method !disable-nl-translation(IO::Handle:D $fh --> IO::Handle:D) {
-	$fh.encoding($_, :!translate-nl) with $fh.encoding;
-	$fh;
+# JSONL is a byte format: each record is UTF-8 JSON followed by one 0x0A
+# byte, on every platform. Records are therefore written as bytes,
+# bypassing the handle's encoder entirely — Rakudo builds that encoder
+# with newline translation on (rewriting "\n" to CRLF on Windows), it is
+# not an `open` argument, and re-setting it through .encoding
+# short-circuits when the encoding name is unchanged. Bytes have no such
+# trapdoors, and .write is ordered with any .say the caller does on a
+# shared handle.
+method !emit(Any:D $value --> Nil) {
+	# The closed-handle check .say performs and .write does not: without
+	# it a write to a closed handle dies with a raw VM error instead of
+	# the typed X::IO::Closed callers match on.
+	die X::IO::Closed.new(:trying<write>)
+		unless $!fh.defined && $!fh.opened;
+	$!fh.write((self!serialize($value) ~ "\n").encode);
+	$!fh.flush if $!flush;
+	Nil;
 }
 
 method !serialize(Any:D $value --> Str:D) {
@@ -38,12 +46,12 @@ method !serialize(Any:D $value --> Str:D) {
 }
 
 method !open-for-write() {
-	$!fh = self!disable-nl-translation($!path.open(:w));
+	$!fh = $!path.open(:w);
 	$!owns-handle = True;
 }
 
 method !open-for-append() {
-	$!fh = self!disable-nl-translation($!path.open(:a));
+	$!fh = $!path.open(:a);
 	$!owns-handle = True;
 }
 
@@ -51,8 +59,7 @@ method write-line(Any:D $value) {
 	if $!path.defined && !$!fh.defined {
 		self!open-for-write;
 	}
-	$!fh.say(self!serialize($value));
-	$!fh.flush if $!flush;
+	self!emit($value);
 }
 
 method write-all(@values) {
@@ -60,8 +67,7 @@ method write-all(@values) {
 		self!open-for-write;
 	}
 	for @values -> Any:D $value {
-		$!fh.say(self!serialize($value));
-		$!fh.flush if $!flush;
+		self!emit($value);
 	}
 	self.close if $!owns-handle;
 }
@@ -69,12 +75,10 @@ method write-all(@values) {
 method append(Any:D $value) {
 	if $!path.defined {
 		self!open-for-append;
-		$!fh.say(self!serialize($value));
-		$!fh.flush if $!flush;
+		self!emit($value);
 		self.close;
 	} else {
-		$!fh.say(self!serialize($value));
-		$!fh.flush if $!flush;
+		self!emit($value);
 	}
 }
 
@@ -82,14 +86,12 @@ method append-many(@values) {
 	if $!path.defined {
 		self!open-for-append;
 		for @values -> Any:D $value {
-			$!fh.say(self!serialize($value));
-			$!fh.flush if $!flush;
+			self!emit($value);
 		}
 		self.close;
 	} else {
 		for @values -> Any:D $value {
-			$!fh.say(self!serialize($value));
-			$!fh.flush if $!flush;
+			self!emit($value);
 		}
 	}
 }

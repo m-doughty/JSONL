@@ -3,7 +3,7 @@ use lib 'lib';
 use JSONL::Writer;
 use JSON::Fast;
 
-plan 19;
+plan 20;
 
 my IO::Path $tmpdir = $*TMPDIR.add("jsonl-writer-test-{$*PID}");
 $tmpdir.mkdir;
@@ -227,12 +227,12 @@ subtest 'providing neither path nor handle dies' => {
 # --- byte-identical output on every platform ---
 
 subtest 'output is byte-identical across platforms' => {
-	plan 7;
-	# The record separator is one 0x0A byte, on Windows too: the writer
-	# rebuilds each handle's encoder with newline translation off (the
-	# encoder is built translating by default, and that rewrites "\n" to
-	# CRLF on Windows). Trivially green on POSIX; on Windows this is the
-	# regression test for the translation being left on.
+	plan 9;
+	# The record separator is one 0x0A byte, on Windows too: records are
+	# written as bytes, bypassing the handle's encoder — which is built
+	# with newline translation on, rewrites "\n" to CRLF on Windows, and
+	# offers no reachable off-switch (:!translate-nl is not an open
+	# argument, and .encoding short-circuits on an unchanged name).
 	my IO::Path $f = tmp-path('byte-identical.jsonl');
 	my JSONL::Writer $w .= new(:path($f));
 	$w.write-all([{:a(1)}, {:b(2)}]);
@@ -254,4 +254,30 @@ subtest 'output is byte-identical across platforms' => {
 	is $hbytes.grep(0x0A).elems, 2, 'handle mode: one LF per record';
 	is $hbytes.grep(0x0D).elems, 0, 'handle mode: no CR anywhere';
 	is $g.lines.elems, 2, 'handle mode: reads back as two records';
+
+	# A handle whose nl-out is CRLF is what say-based emission would have
+	# produced on Windows — this reproduces the bug's shape on EVERY
+	# platform, so the byte path is proven immune without a Windows box.
+	my IO::Path $c = tmp-path('byte-identical-crlf-handle.jsonl');
+	my IO::Handle $cfh = $c.open(:w, :nl-out("\r\n"));
+	my JSONL::Writer $wc .= new(:handle($cfh));
+	$wc.write-line({:a(1)});
+	$cfh.close;
+	my Blob $cbytes = $c.slurp(:bin);
+	is $cbytes.grep(0x0D).elems, 0,
+		'a CRLF nl-out handle still gets byte records, no CR';
+	is $cbytes[*-1], 0x0A, 'and the one-byte separator';
+};
+
+subtest 'writing through a closed handle throws X::IO::Closed' => {
+	plan 1;
+	# .say performs this check itself; the byte path has to supply it, or
+	# a closed handle dies with a raw VM error nobody can match on.
+	my IO::Path $f = tmp-path('closed-handle.jsonl');
+	my IO::Handle $fh = $f.open(:w);
+	my JSONL::Writer $w .= new(:handle($fh));
+	$w.write-line({:a(1)});
+	$fh.close;
+	throws-like { $w.write-line({:b(2)}) }, X::IO::Closed,
+		'the typed exception, not a VM error';
 };
