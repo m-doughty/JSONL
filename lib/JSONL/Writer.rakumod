@@ -17,27 +17,33 @@ submethod TWEAK() {
 		die "JSONL::Writer: must provide :path or :handle";
 	}
 	if $!handle.defined {
-		$!fh = $!handle;
+		$!fh = self!disable-nl-translation($!handle);
 		$!owns-handle = False;
 	}
+}
+
+# JSONL is a byte format whose record separator is one 0x0A byte, on
+# every platform. Rakudo builds a handle's encoder with newline
+# translation ON (it is not an `open` argument — `open(:!translate-nl)`
+# is silently swallowed by %_), which on Windows rewrites every "\n" to
+# CRLF on the way out. Rebuilding the encoder through .encoding is the
+# one supported way to turn that off; a no-op everywhere else.
+method !disable-nl-translation(IO::Handle:D $fh --> IO::Handle:D) {
+	$fh.encoding($_, :!translate-nl) with $fh.encoding;
+	$fh;
 }
 
 method !serialize(Any:D $value --> Str:D) {
 	to-json($value, :!pretty, :$!sorted-keys);
 }
 
-# :!translate-nl on both opens: JSONL is a byte format with "\n" as its
-# record separator, and the default translation would turn that into
-# "\r\n" on Windows — same input, different bytes per platform. A
-# caller-supplied :handle keeps whatever translation it was opened with;
-# open it :!translate-nl for deterministic output.
 method !open-for-write() {
-	$!fh = $!path.open(:w, :!translate-nl);
+	$!fh = self!disable-nl-translation($!path.open(:w));
 	$!owns-handle = True;
 }
 
 method !open-for-append() {
-	$!fh = $!path.open(:a, :!translate-nl);
+	$!fh = self!disable-nl-translation($!path.open(:a));
 	$!owns-handle = True;
 }
 

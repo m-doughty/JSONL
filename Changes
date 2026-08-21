@@ -2,6 +2,17 @@ Revision history for JSONL
 
 {{$NEXT}}
 
+0.1.5  2026-08-21T23:27:29+01:00
+    - Writer output really is byte-identical on every platform now. The
+      0.1.4 fix passed :!translate-nl to open, which is not an open
+      argument at all — it lands in the implicit %_ and is silently
+      swallowed, so Windows kept writing CRLF (caught by the 0.1.4 byte
+      test on Windows CI). The handle's encoder is built translating by
+      default and the one supported off-switch is rebuilding it through
+      .encoding(:!translate-nl), which the writer now does for handles it
+      opens AND for a caller-supplied :handle at construction. The byte
+      test now covers both modes.
+
 0.1.4  2026-08-21T23:16:18+01:00
     - Writer output is byte-identical on every platform: path-mode handles
       are opened :!translate-nl, so the "\n" record separator reaches the
