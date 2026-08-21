@@ -2,6 +2,14 @@ Revision history for JSONL
 
 {{$NEXT}}
 
+0.1.4  2026-08-21T23:16:18+01:00
+    - Writer output is byte-identical on every platform: path-mode handles
+      are opened :!translate-nl, so the "\n" record separator reaches the
+      file as one 0x0A byte on Windows too instead of being rewritten to
+      CRLF by the platform's default newline translation. A caller-supplied
+      :handle keeps whatever translation it was opened with; open it
+      :!translate-nl for deterministic output.
+
 0.1.3  2026-08-09T19:40:27+01:00
     - Added opt-in :flush to JSONL::Writer for handle-mode durability
       (flushes to disk after every line so a crash loses at most the

@@ -3,7 +3,7 @@ use lib 'lib';
 use JSONL::Writer;
 use JSON::Fast;
 
-plan 18;
+plan 19;
 
 my IO::Path $tmpdir = $*TMPDIR.add("jsonl-writer-test-{$*PID}");
 $tmpdir.mkdir;
@@ -222,4 +222,23 @@ subtest 'providing both path and handle dies' => {
 subtest 'providing neither path nor handle dies' => {
 	plan 1;
 	dies-ok { JSONL::Writer.new() }, 'Dies with no path or handle';
+};
+
+# --- byte-identical output on every platform ---
+
+subtest 'path-mode output is byte-identical across platforms' => {
+	plan 4;
+	# The record separator is one 0x0A byte, on Windows too: the writer
+	# opens :!translate-nl, so the platform's newline translation never
+	# rewrites it to CRLF. Trivially green on POSIX; on Windows this is
+	# the regression test for the translation being left on.
+	my IO::Path $f = tmp-path('byte-identical.jsonl');
+	my JSONL::Writer $w .= new(:path($f));
+	$w.write-all([{:a(1)}, {:b(2)}]);
+	$w.append({:c(3)});
+	my Blob $bytes = $f.slurp(:bin);
+	is $bytes.grep(0x0A).elems, 3, 'one LF per record';
+	is $bytes.grep(0x0D).elems, 0, 'no CR anywhere';
+	is $bytes[*-1], 0x0A, 'the file ends in the separator';
+	is $f.lines.elems, 3, 'and reads back as three records';
 };

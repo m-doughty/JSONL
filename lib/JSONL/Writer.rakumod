@@ -26,13 +26,18 @@ method !serialize(Any:D $value --> Str:D) {
 	to-json($value, :!pretty, :$!sorted-keys);
 }
 
+# :!translate-nl on both opens: JSONL is a byte format with "\n" as its
+# record separator, and the default translation would turn that into
+# "\r\n" on Windows — same input, different bytes per platform. A
+# caller-supplied :handle keeps whatever translation it was opened with;
+# open it :!translate-nl for deterministic output.
 method !open-for-write() {
-	$!fh = $!path.open(:w);
+	$!fh = $!path.open(:w, :!translate-nl);
 	$!owns-handle = True;
 }
 
 method !open-for-append() {
-	$!fh = $!path.open(:a);
+	$!fh = $!path.open(:a, :!translate-nl);
 	$!owns-handle = True;
 }
 
